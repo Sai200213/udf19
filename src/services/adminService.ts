@@ -3,6 +3,7 @@ import { db } from '../firebase/config';
 import { doc, onSnapshot, setDoc, getDoc, updateDoc, collection, query, getDocs, writeBatch, deleteDoc, orderBy } from 'firebase/firestore';
 import { Role, Site, WorkflowConfig, PortalConfig } from '../../types';
 import { logSystemAction } from './auditService';
+import { defaultFormSections } from '../constants/defaults';
 
 export const SETTINGS_COLLECTION = 'settings';
 const ROLES_DOC_ID = 'roles';
@@ -37,6 +38,9 @@ export const subscribeToFormSections = (callback: (sections: any[]) => void) => 
     return onSnapshot(doc(db, SETTINGS_COLLECTION, FORM_SECTIONS_DOC_ID), (snap) => {
         if (snap.exists()) {
             let sections = snap.data().sections || [];
+            if (!Array.isArray(sections) || sections.length === 0) {
+                sections = defaultFormSections;
+            }
             // Ensure Job Details has Unit or Facility (order 1) before Post of Apply (order 2)
             sections = sections.map((s: any) => {
                 if ((s.name === 'Job Details' || s.id === 'eb4bf8a6-a8bd-4563-817d-792716e6474c') && Array.isArray(s.fields)) {
@@ -52,10 +56,13 @@ export const subscribeToFormSections = (callback: (sections: any[]) => void) => 
             });
             callback(sections);
         } else {
-            callback([]);
+            // When snap does not exist (e.g. offline mode, cold start in fresh incognito),
+            // NEVER wipe out the form with an empty array! Fall back to defaultFormSections.
+            callback(defaultFormSections);
         }
     }, (error) => {
-        console.error("Error subscribing to form sections:", error);
+        console.error("Error subscribing to form sections, falling back to defaults:", error);
+        callback(defaultFormSections);
     });
 };
 
@@ -211,6 +218,23 @@ export const subscribeToStaffUsers = (callback: (users: any[]) => void) => {
     });
 };
 
+/** Recursively strips `undefined` properties before writing to Firestore. */
+function stripUndefinedFields<T>(value: T): T {
+    if (Array.isArray(value)) {
+        return value.filter(v => v !== undefined).map(v => stripUndefinedFields(v)) as unknown as T;
+    }
+    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+        const cleaned: Record<string, any> = {};
+        for (const [k, v] of Object.entries(value)) {
+            if (v !== undefined) {
+                cleaned[k] = stripUndefinedFields(v);
+            }
+        }
+        return cleaned as T;
+    }
+    return value;
+}
+
 export const updateStaffUsers = async (users: any[]) => {
     // Use writeBatch for atomicity and speed (up to 500 ops per batch)
     const BATCH_LIMIT = 490;
@@ -220,7 +244,7 @@ export const updateStaffUsers = async (users: any[]) => {
         const batch = writeBatch(db);
         const chunk = validUsers.slice(i, i + BATCH_LIMIT);
         chunk.forEach(user => {
-            batch.set(doc(db, STAFF_COLLECTION_ID, user.id), user, { merge: true });
+            batch.set(doc(db, STAFF_COLLECTION_ID, user.id), stripUndefinedFields(user), { merge: true });
         });
         await batch.commit();
     }

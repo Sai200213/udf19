@@ -47,19 +47,10 @@ export const db = initializeFirestore(app, {
 });
 export const storage = getStorage(app);
 
-// SECURITY: Route Cloud Function calls through the current custom domain (/api)
-// in production so that traffic passes through Cloudflare WAF, rate limits, and DDoS protection.
-// In local dev (localhost), fallback to direct 'us-central1' region.
-const isLocalhost = typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
-const functionsCustomDomain = (typeof window !== 'undefined' && !isLocalhost)
-    ? `${window.location.origin}/api`
-    : undefined;
-
-export const functions = functionsCustomDomain
-    ? getFunctions(app, functionsCustomDomain)
-    : getFunctions(app, 'us-central1');
+// Cloud Functions initialization
+// Uses direct 'us-central1' endpoint (explicitly allowed in production CSP connect-src)
+// to ensure Authorization headers are preserved by callable functions without CDN proxy stripping.
+export const functions = getFunctions(app, 'us-central1');
 
 // Initialize Firebase App Check with reCAPTCHA Enterprise (IMP-5)
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, AppCheck } from 'firebase/app-check';
@@ -150,8 +141,15 @@ export const ensureAuthenticated = async () => {
     let user = auth.currentUser;
     if (!user) {
         const { signInAnonymously } = await import('firebase/auth');
-        const cred = await signInAnonymously(auth);
-        user = cred.user;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const cred = await signInAnonymously(auth);
+                return cred.user;
+            } catch (err: any) {
+                if (attempt === 2) throw err;
+                await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            }
+        }
     }
     return user;
 };

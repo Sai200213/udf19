@@ -186,6 +186,40 @@ export const googleSignInForOnboarding = async () => {
 };
 
 /**
+ * Links the current anonymous onboarding user to a Google account.
+ * When the user is already signed in anonymously, linkWithPopup preserves their existing UID!
+ * This ensures the draft in Firestore remains 100% owned by the same UID with zero permission errors.
+ */
+export const googleLinkForOnboarding = async (): Promise<{ user: any; wasLinked: boolean }> => {
+    if (Capacitor.isNativePlatform()) {
+        const user = await googleSignInForOnboarding();
+        return { user, wasLinked: false };
+    }
+
+    const { linkWithPopup, signInWithPopup, GoogleAuthProvider, setPersistence, browserSessionPersistence } = await import('firebase/auth');
+    await setPersistence(auth, browserSessionPersistence);
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+
+    const currentUser = auth.currentUser;
+    if (currentUser && currentUser.isAnonymous) {
+        try {
+            const result = await linkWithPopup(currentUser, provider);
+            return { user: result.user, wasLinked: true };
+        } catch (linkError: any) {
+            if (linkError?.code === 'auth/credential-already-in-use') {
+                const result = await signInWithPopup(auth, provider);
+                return { user: result.user, wasLinked: false };
+            }
+            throw linkError;
+        }
+    } else {
+        const result = await signInWithPopup(auth, provider);
+        return { user: result.user, wasLinked: false };
+    }
+};
+
+/**
  * Sign out from Google (clears native session too).
  */
 export const googleSignOut = async (): Promise<void> => {

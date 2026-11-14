@@ -91,6 +91,13 @@ const AdminRecycleBinPage: React.FC<AdminRecycleBinPageProps> = ({
   const [isEmptying, setIsEmptying] = useState(false);
 
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [staffRestoreTarget, setStaffRestoreTarget] = useState<RecycleBinItem | null>(null);
+
+  const getSavedStaffSiteIds = (item: RecycleBinItem): string[] => {
+    const fromMeta = Array.isArray(item.metadata?.linkedSites) ? item.metadata.linkedSites : [];
+    const fromData = Array.isArray(item.data?.sitesManaged) ? item.data.sitesManaged : [];
+    return Array.from(new Set([...fromMeta, ...fromData])).filter(Boolean);
+  };
 
   // Real-time subscription to recycle bin
   useEffect(() => {
@@ -135,17 +142,26 @@ const AdminRecycleBinPage: React.FC<AdminRecycleBinPageProps> = ({
   }, [items]);
 
   // Handle Restore
-  const handleRestore = async (item: RecycleBinItem) => {
+  const executeRestore = async (item: RecycleBinItem, restoreSiteLinks = true) => {
     setRestoringId(item.id);
     try {
-      const res = await restoreFromRecycleBin(item.id);
+      const res = await restoreFromRecycleBin(item.id, { restoreSiteLinks });
       onNotify(res.message, 'success');
+      setStaffRestoreTarget(null);
       if (onRefreshData) onRefreshData();
     } catch (err: any) {
       onNotify(err.message || 'Failed to restore item', 'error');
     } finally {
       setRestoringId(null);
     }
+  };
+
+  const handleRestore = async (item: RecycleBinItem) => {
+    if (item.itemType === 'STAFF' && getSavedStaffSiteIds(item).length > 0) {
+      setStaffRestoreTarget(item);
+      return;
+    }
+    await executeRestore(item, true);
   };
 
   // Handle Permanent Delete
@@ -499,6 +515,54 @@ const AdminRecycleBinPage: React.FC<AdminRecycleBinPageProps> = ({
                   This will permanently erase all <strong>{items.length} items</strong> currently in the Recycle Bin. No records can be restored after this operation.
                 </p>
               </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* 7. Staff Restore Site-Link Choice Modal */}
+      {staffRestoreTarget && (
+        <Modal
+          isOpen={Boolean(staffRestoreTarget)}
+          onClose={() => { if (!restoringId) setStaffRestoreTarget(null); }}
+          title={`Restore Staff Account: ${staffRestoreTarget.name}`}
+          footer={
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setStaffRestoreTarget(null)}
+                disabled={Boolean(restoringId)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => executeRestore(staffRestoreTarget, false)}
+                disabled={Boolean(restoringId)}
+                className="border border-blue-300 text-blue-700 hover:bg-blue-50"
+              >
+                {restoringId === staffRestoreTarget.id && <Loader2 size={14} className="animate-spin mr-1" />}
+                Restore Clean (No Sites)
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => executeRestore(staffRestoreTarget, true)}
+                disabled={Boolean(restoringId)}
+              >
+                {restoringId === staffRestoreTarget.id ? <Loader2 size={14} className="animate-spin mr-1" /> : <RotateCcw size={14} className="mr-1" />}
+                Restore + Re-link Sites
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-3 text-sm text-gray-700">
+            <p>
+              <strong>{staffRestoreTarget.name}</strong> previously managed{' '}
+              <strong>{getSavedStaffSiteIds(staffRestoreTarget).length} site(s)</strong> before being soft-deleted.
+            </p>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 space-y-1.5">
+              <p><strong>Restore + Re-link Sites:</strong> Restores the account and re-attaches them as supervisor on their previous sites.</p>
+              <p><strong>Restore Clean (No Sites):</strong> Restores the account with zero assigned sites so you can assign new sites freshly (recommended for rehired staff changing sites).</p>
             </div>
           </div>
         </Modal>

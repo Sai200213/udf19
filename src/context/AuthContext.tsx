@@ -118,23 +118,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const { doc, onSnapshot } = await import('firebase/firestore');
 
                 const handleProfileData = async (data: Record<string, any>) => {
-                    // If claims were updated on server, refresh JWT token immediately
-                    if (data.claimsUpdatedAt) {
+                    // Update local user state immediately if role, permissionOverrides, sites, or status changed
+                    setUser(prev => {
+                        if (!prev) return null;
+                        const roleChanged = data.roleId !== undefined && data.roleId !== prev.roleId;
+                        const sitesChanged = data.sitesManaged !== undefined && JSON.stringify(data.sitesManaged) !== JSON.stringify(prev.sitesManaged);
+                        const overridesChanged = data.permissionOverrides !== undefined && JSON.stringify(data.permissionOverrides) !== JSON.stringify(prev.permissionOverrides);
+                        const statusChanged = data.isDisabled !== undefined && data.isDisabled !== prev.isDisabled;
+
+                        if (roleChanged || sitesChanged || overridesChanged || statusChanged) {
+                            return {
+                                ...prev,
+                                roleId: data.roleId !== undefined ? data.roleId : prev.roleId,
+                                sitesManaged: data.sitesManaged !== undefined ? data.sitesManaged : prev.sitesManaged,
+                                permissionOverrides: data.permissionOverrides !== undefined ? data.permissionOverrides : prev.permissionOverrides,
+                                isDisabled: data.isDisabled !== undefined ? data.isDisabled : prev.isDisabled
+                            };
+                        }
+                        return prev;
+                    });
+
+                    // If claims or permissions were updated on server, refresh Firebase Auth JWT token immediately
+                    // so Firestore backend security rules enforce the new claims on the very next database query
+                    if (data.claimsUpdatedAt || data.permissionOverrides !== undefined || data.roleId !== undefined) {
                         try {
-                            log.log('AuthContext: Detected claimsUpdatedAt update, refreshing Firebase Auth JWT token...');
+                            log.log('AuthContext: Detected permissions/claims update, refreshing Firebase Auth JWT token...');
                             await auth.currentUser?.getIdToken(true);
                         } catch (tokenErr) {
                             log.warn('AuthContext: Could not refresh token on claims change:', tokenErr);
                         }
-                    }
-                    // Update local user state if role, permissions, or sites changed
-                    if (data.roleId !== user.roleId || JSON.stringify(data.sitesManaged) !== JSON.stringify(user.sitesManaged)) {
-                        setUser(prev => prev ? ({
-                            ...prev,
-                            roleId: data.roleId || prev.roleId,
-                            sitesManaged: data.sitesManaged || prev.sitesManaged,
-                            permissionOverrides: data.permissionOverrides || prev.permissionOverrides
-                        }) : null);
                     }
                 };
 

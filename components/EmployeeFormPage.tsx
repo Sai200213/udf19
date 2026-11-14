@@ -9,12 +9,13 @@ import { ArrowLeft, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight, Zap, 
 import ProgressBar from './common/ProgressBar';
 import { useAuth } from '../src/context/AuthContext';
 import { useData } from '../src/contexts/DataContext';
-import { loginWithGoogleForOnboarding, loginAnonymously } from '../src/services/authService';
+import { loginWithGoogleForOnboarding, loginAnonymously, linkWithGoogleForOnboarding } from '../src/services/authService';
 import { checkLinkedUidExists } from '../src/services/employeeService';
 import { subscribeToLegacyClaimConfig } from '../src/services/adminService';
 import { signOut } from 'firebase/auth';
 import { auth, storage, ensureAuthenticated } from '../src/firebase/config';
 import { ref, getDownloadURL, getBlob } from 'firebase/storage';
+import { defaultFormSections } from '../src/constants/defaults';
 import { uploadSubmissionDocument, deleteStorageFile, getSecureURL } from '../src/services/storageService';
 import { saveFileToSession, removeFileFromSession, getAllFilesFromSession, clearFileSession } from '../src/utils/fileSessionStore';
 
@@ -884,7 +885,25 @@ const EmployeeFormPage: React.FC<EmployeeFormPageProps> = ({ sections, isLoading
           localStorage.setItem('referralInviteId', guestRef);
         }
 
-        if (!savedDraftId) {
+        let activeId = savedDraftId;
+        if (activeId) {
+          try {
+            const { getDoc, doc } = await import('firebase/firestore');
+            const { db } = await import('../src/firebase/config');
+            const snap = await getDoc(doc(db, 'draft_submissions', activeId));
+            if (!snap.exists()) {
+              console.warn('[Guest Auth] Cached draft ID no longer exists in database. Clearing stale ID.');
+              activeId = '';
+              setSavedDraftId('');
+              sessionStorage.removeItem(SS_SAVED_DRAFT_ID);
+              localStorage.removeItem('onboarding_savedDraftId');
+            }
+          } catch (checkErr) {
+            // non-blocking
+          }
+        }
+
+        if (!activeId) {
           try {
             const initialDraftId = await onSaveDraft(formData, 0);
             if (initialDraftId) {
@@ -912,7 +931,14 @@ const EmployeeFormPage: React.FC<EmployeeFormPageProps> = ({ sections, isLoading
         // SUPPRESSION: Tell AuthContext we are just checking identity, do not load full profile
         localStorage.setItem('portalType', 'onboarding');
 
-        const user = await loginWithGoogleForOnboarding();
+        let user: any = null;
+        if (hasSelectedAuth && auth.currentUser?.isAnonymous) {
+          // Mid-form linking from Guest Mode: use official Firebase linkWithPopup to preserve UID and draft ownership!
+          const linkResult = await linkWithGoogleForOnboarding();
+          user = linkResult.user;
+        } else {
+          user = await loginWithGoogleForOnboarding();
+        }
         if (user && user.uid) {
           // FRONT DOOR GUARD: Immediately check if this Google user has already submitted an application
           try {
@@ -1301,6 +1327,8 @@ const EmployeeFormPage: React.FC<EmployeeFormPageProps> = ({ sections, isLoading
       sessionStorage.removeItem(SS_HAS_AUTH);
       sessionStorage.removeItem(SS_LINKED_UID);
       sessionStorage.removeItem(SS_SAVED_DRAFT_ID);
+      // Clean in-memory form state so previous session prefill values do not bleed into the new link
+      setFormData({});
 
       const loadInvite = async () => {
         try {
@@ -1360,15 +1388,20 @@ const EmployeeFormPage: React.FC<EmployeeFormPageProps> = ({ sections, isLoading
             });
           }
 
-          setFormData(prev => ({
-            ...prev,
+          // Set fresh form data with ONLY this referral link's prefilled values
+          setFormData({
             __referralInviteId: refId,
             ...prefillUpdates
-          }));
+          });
 
         } catch (e: any) {
           console.error("Error loading referral invite:", e);
-          setInviteError("This referral invitation is inactive.");
+          const errMsg = String(e?.message || '').toLowerCase();
+          if (errMsg.includes('offline') || e?.code === 'unavailable') {
+            setInviteError("Network connection issue. Please check your internet connection and try again.");
+          } else {
+            setInviteError("This referral invitation is inactive.");
+          }
         } finally {
           setIsInviteLoading(false);
         }
@@ -1456,7 +1489,9 @@ const EmployeeFormPage: React.FC<EmployeeFormPageProps> = ({ sections, isLoading
     const userRole = authUser && authUser.roleId ? roles.find(r => r.id === authUser.roleId) : null;
     const fieldVisibility = userRole?.fieldVisibility || {};
 
-    return (sections || [])
+    const rawSections = (sections && sections.length > 0) ? sections : defaultFormSections;
+
+    return (rawSections || [])
       .filter(s => s && !s.isDisabled)
       .map(s => ({
         ...s,
@@ -2477,6 +2512,7 @@ const EmployeeFormPage: React.FC<EmployeeFormPageProps> = ({ sections, isLoading
   }
 
   if (inviteError) {
+    const isNetwork = inviteError.toLowerCase().includes('network') || inviteError.toLowerCase().includes('connection');
     const isInactive = inviteError.toLowerCase().includes('inactive');
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -2485,10 +2521,19 @@ const EmployeeFormPage: React.FC<EmployeeFormPageProps> = ({ sections, isLoading
             <XCircle size={48} className="text-amber-500" />
           </div>
           <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            {isInactive ? "Invitation Inactive" : "Invitation Expired"}
+            {isNetwork ? "Connection Issue" : (isInactive ? "Invitation Inactive" : "Invitation Expired")}
           </h2>
           <p className="text-gray-600 mb-6">{inviteError}</p>
-          <Button onClick={handleBackToHome} variant="primary" size="lg" className="w-full">Return to Home</Button>
+          <div className="flex flex-col gap-2.5">
+            {isNetwork && (
+              <Button onClick={() => window.location.reload()} variant="primary" size="lg" className="w-full">
+                Retry Connection
+              </Button>
+            )}
+            <Button onClick={handleBackToHome} variant={isNetwork ? "secondary" : "primary"} size="lg" className="w-full">
+              Return to Home
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -2556,7 +2601,26 @@ const EmployeeFormPage: React.FC<EmployeeFormPageProps> = ({ sections, isLoading
           </div>
           <h2 className="text-3xl font-bold text-gray-900 mb-2">Form Unavailable</h2>
           <p className="text-gray-600 mb-6">There are no active sections or fields enabled in the joining form at this moment.</p>
-          <Button onClick={handleBackToHome} variant="primary" size="lg" className="w-full">Return to Home</Button>
+          <div className="space-y-3">
+            <Button onClick={() => window.location.reload()} variant="primary" size="lg" className="w-full">
+              Retry Connection
+            </Button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowRetrieveModal(true);
+                setRetrieveCode('');
+                setRetrieveError(null);
+                setTimeout(() => retrieveInputRef.current?.focus(), 100);
+              }}
+              className="w-full py-2.5 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer rounded hover:bg-blue-50"
+            >
+              <Download size={16} />
+              Already saved a draft? Enter Recovery Code
+            </button>
+            <Button onClick={handleBackToHome} variant="outline" size="sm" className="w-full">Return to Home</Button>
+          </div>
+          {renderRetrieveDraftModal()}
         </div>
       </div>
     );

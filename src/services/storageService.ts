@@ -94,6 +94,12 @@ export const uploadViaSignedUrl = async (
     file: File,
     onProgress?: (percent: number) => void
 ): Promise<string> => {
+    // Ensure caller is authenticated (anonymous or permanent) so request.auth is populated in Cloud Function
+    let user = auth.currentUser;
+    if (!user) {
+        user = await ensureAuthenticated();
+    }
+
     const getUploadUrlFn = httpsCallable<
         { context: string; storagePath: string; contentType: string; fileSize: number },
         { success: boolean; uploadUrl: string; storagePath: string }

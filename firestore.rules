@@ -141,7 +141,7 @@ service cloud.firestore {
     // ─── Settings / Metadata ────────────────────────────────────────────────
     // Form structure, login labels, and public stats are public (needed for onboarding + landing page)
     match /settings/{docId} {
-      allow read: if docId in ['public_website', 'public_stats', 'sites', 'form_sections', 'portal_config'] || isAuthenticated();
+      allow read: if docId in ['public_website', 'public_stats', 'sites', 'form_sections', 'portal_config', 'legacy_claim_config'] || isAuthenticated();
       allow write: if isSuperAdmin() || hasPermission('MANAGE_SYSTEM') ||
         (docId == 'sites' && (hasPermission('SITES_MANAGE') || hasPermission('SITES_EDIT_INFO') || hasPermission('MANAGE_SITES'))) ||
         (docId == 'workflows' && hasPermission('MANAGE_WORKFLOWS')) ||
@@ -503,7 +503,10 @@ service cloud.firestore {
       allow create: if isSuperAdmin() || hasPermission('INVITES_CREATE');
       allow update: if (
         // Admin override (referral clicks, starts & joins are tracked exclusively server-side)
-        isSuperAdmin() || hasPermission('INVITES_MANAGE')
+        isSuperAdmin() || hasPermission('INVITES_MANAGE') ||
+        (hasPermission('INVITES_REACTIVATE') && resource.data.status != 'Active' && request.resource.data.status == 'Active') ||
+        (hasPermission('INVITES_EDIT') && request.resource.data.status == resource.data.status) ||
+        (hasPermission('INVITES_DELETE') && request.resource.data.status == 'Revoked')
       ) || (
         // Creator-specific checks
         isAuthenticated() && resource.data.createdBy == request.auth.uid && (

@@ -727,10 +727,12 @@ const App: React.FC = () => {
   };
 
   const syncedSections = useMemo(() => {
-    if (!formSections || !Array.isArray(formSections)) return [];
+    const rawSections = (formSections && Array.isArray(formSections) && formSections.length > 0)
+      ? formSections
+      : defaultFormSections;
 
     const activeSiteNames = sites.filter(s => s && s.status === 'Active').map(s => s.name);
-    return formSections.map(section => {
+    return rawSections.map(section => {
       if (!section) return null;
       let fields = (section.fields || []).map(field => {
         if (!field) return null;
@@ -859,17 +861,26 @@ const App: React.FC = () => {
           navigateTo(AppView.ADMIN_DASHBOARD);
         } else {
           // STRICT ISOLATION: Check if they are an Employee trying to access Admin
-          const { getEmployeeProfile, logoutUser } = await import('./src/services/authService');
+          const { getEmployeeProfile } = await import('./src/services/authService');
           const employee = await getEmployeeProfile(firebaseUser);
 
           if (employee) {
             setAdminLoginError('Employee accounts are not permitted on the Management Portal.');
           } else {
             setAdminLoginError('Auth successful, but no Admin or Staff record was found for this Google account.');
+            // Delete brand-new orphan Auth account created by an unregistered Google Sign-In attempt
+            const createdMs = firebaseUser.metadata?.creationTime ? Date.parse(firebaseUser.metadata.creationTime) : 0;
+            const lastSignInMs = firebaseUser.metadata?.lastSignInTime ? Date.parse(firebaseUser.metadata.lastSignInTime) : 0;
+            if (createdMs && lastSignInMs && Math.abs(lastSignInMs - createdMs) <= 15000) {
+              try {
+                await firebaseUser.delete();
+              } catch (_) {
+                // Non-fatal fallback to logoutUser() below
+              }
+            }
           }
 
-          const { logoutUser: logout } = await import('./src/services/authService');
-          await logout();
+          await logoutUser();
           setIsLoading(false);
         }
       } else {

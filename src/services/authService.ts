@@ -25,11 +25,6 @@ import { clearFileSession } from '../utils/fileSessionStore';
  */
 const stampAdminClaims = async (firebaseUser: FirebaseUser): Promise<void> => {
     try {
-        const tokenResult = await firebaseUser.getIdTokenResult();
-        if (tokenResult.claims && tokenResult.claims.isAdmin === true) {
-            log.log('[authService] Admin claims already present in token.');
-            return;
-        }
         const setClaimsFn = httpsCallable(functions, 'setAdminClaims');
         await setClaimsFn({});
         // Force-refresh the token so new claims are available immediately
@@ -375,6 +370,16 @@ export const loginWithGoogleForOnboarding = async () => {
         return await googleSignInForOnboarding();
     } catch (error: any) {
         log.error("Google onboarding login error:", error);
+        throw error;
+    }
+};
+
+export const linkWithGoogleForOnboarding = async () => {
+    try {
+        const { googleLinkForOnboarding } = await import('../utils/googleAuthHelper');
+        return await googleLinkForOnboarding();
+    } catch (error: any) {
+        log.error("Google onboarding link error:", error);
         throw error;
     }
 };

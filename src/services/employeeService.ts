@@ -125,6 +125,13 @@ export const getFormDraft = async (draftId: string) => {
     const cleanId = (draftId || '').trim();
     if (!cleanId) return null;
 
+    // Ensure session is authenticated so activeSessionUid is registered in getDraftSubmissionSecure
+    try {
+        await ensureAuthenticated();
+    } catch (authErr) {
+        console.warn('[getFormDraft] Authentication initialization warning:', authErr);
+    }
+
     // SEC-05: Rate-limited Cloud Function retrieval with 24-hour IP ban on brute force guessing
     try {
         const getDraftFn = httpsCallable<{ draftId: string }, { id: string; data: any }>(functions, 'getDraftSubmissionSecure');
@@ -5404,11 +5411,25 @@ export const deleteCorrectionRequest = async (
 };
 
 // --- Referral Invite Helpers ---
-export const getReferralInvite = async (refId: string): Promise<ReferralInvite | null> => {
+export const getReferralInvite = async (refId: string, retries = 2): Promise<ReferralInvite | null> => {
     const docRef = doc(db, 'referral_invites', refId);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-        return { id: snap.id, ...snap.data() } as ReferralInvite;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+                return { id: snap.id, ...snap.data() } as ReferralInvite;
+            }
+            return null;
+        } catch (err: any) {
+            const errMsg = String(err?.message || '').toLowerCase();
+            const isOfflineOrTimeout = errMsg.includes('offline') || err?.code === 'unavailable' || err?.code === 'deadline-exceeded';
+            if (attempt < retries && isOfflineOrTimeout) {
+                // Short exponential backoff to allow WebChannel socket negotiation to complete
+                await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+                continue;
+            }
+            throw err;
+        }
     }
     return null;
 };

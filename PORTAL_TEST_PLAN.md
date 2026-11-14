@@ -10,11 +10,11 @@ Use this document to manually verify all core capabilities, security controls, a
 |:---:|---|---|:---:|
 | **Stage 1** | System Connection & Diagnostics | Firestore, Dev Server, Console | [x] Passed |
 | **Stage 2** | Portal Authentication & Scope Isolation | Firebase Auth, Login Routing, Session Storage | [x] Passed |
-| **Stage 3** | Staff Management & Security Integration | `/staff_accounts`, Auth Sync, Password Resets, Smart Deletes | [ ] Pending |
-| **Stage 4** | Granular Permissions & Role-based Overrides | Module Cards, Allow/Deny/Inherit Overrides, UI Hiding | [ ] Pending |
-| **Stage 5** | Organisation Management & Dynamic Designations | Site Configuration, Global Designations Library, Site Mapping | [ ] Pending |
-| **Stage 6** | Recruitment & Referral Onboarding Links | Link Tracker, Prefill Configuration, Phone Locking, Reusable Toggles, Link Edits, Reactivation, WhatsApp Share | [ ] Pending |
-| **Stage 7** | Onboarding Drafts & Deletion Security Rules | Recovery Tokens, `firestore.rules` Draft Deletion Checks | [ ] Pending |
+| **Stage 3** | Staff Management & Security Integration | `/staff_accounts`, Auth Sync, Password Resets, Smart Deletes | [x] Passed |
+| **Stage 4** | Granular Permissions & Role-based Overrides | Module Cards, Allow/Deny/Inherit Overrides, UI Hiding | [x] Passed |
+| **Stage 5** | Organisation Management & Dynamic Designations | Site Configuration, Global Designations Library, Site Mapping | [x] Passed |
+| **Stage 6** | Recruitment & Referral Onboarding Links | Link Tracker, Prefill Configuration, Phone Locking, Reusable Toggles, Link Edits, Reactivation, WhatsApp Share | [x] Passed |
+| **Stage 7** | Onboarding Drafts & Deletion Security Rules | Recovery Tokens, `firestore.rules` Draft Deletion Checks | [x] Passed |
 | **Stage 8** | Onboarding Candidate Wizard & Field Interactions | Wizard Steps, Prefills, Field Rules, Aadhaar Parse, Quotas | [ ] Pending |
 | **Stage 9** | Onboarding Candidate Form Submission & Auth Transition | Guest/Google Submission, Auth Transition, Sheet Sync, UID Conflicts | [ ] Pending |
 | **Stage 10** | Onboarding Printable Biodata Sheets | Passport Photos, CSS Print Media, Layout Grid | [ ] Pending |
@@ -55,12 +55,12 @@ Use this document to manually verify all core capabilities, security controls, a
 
 | Step ID | Test Action | Expected Result | Status | Observation / Comment |
 |:---:|---|---|:---:|---|
-| **3.1** | Create a new Staff Account from the Admin panel. Check Firestore collection writes. | Creates document ONLY in `/staff_accounts` collection. No record created in legacy `/staff`. | [ ] Pass<br>[ ] Fail | |
-| **3.2** | **Direct Password Reset:** Open Edit Staff modal. Enter new password in "Reset Password" card, click Reset. | Calls `resetStaffUserPassword` Cloud Function. Password updates instantly in Firebase Auth. Login succeeds with new password. | [ ] Pass<br>[ ] Fail | |
-| **3.3** | **Status Sync (Disable):** Click toggle to disable the Staff user. Check Firebase Auth console. | Firestore status updates to `isDisabled: true`. Firebase Auth account is marked `disabled`. User is blocked from logging in. | [ ] Pass<br>[ ] Fail | |
-| **3.4** | **Status Sync (Enable):** Re-enable the disabled Staff user. | Auth account status resets. Logins succeed immediately. | [ ] Pass<br>[ ] Fail | |
-| **3.5** | **Smart Delete (Clean Links):** Initiate delete on a Staff member linked to sites or onboarding reviews. Select "Clean Links". | Staff account is deleted. Linked records remain, but supervisor/assignee fields are cleared in database. | [ ] Pass<br>[ ] Fail | |
-| **3.6** | **Smart Delete (Purge Entire Records):** Initiate delete. Select "Delete Account + Entire Records". | Staff account is deleted, along with all associated locations (sites), employees, and reviews. | [ ] Pass<br>[ ] Fail | |
+| **3.1** | Create a new Staff Account from the Admin panel. Check Firestore collection writes. | Creates document ONLY in `/staff_accounts` collection. No record created in legacy `/staff`. | [x] Pass<br>[ ] Fail | Verified staff creation (`tempyt62@gmail.com`) in `/staff_accounts`; manual & Google Sign-In both verified clean. |
+| **3.2** | **Direct Password Reset:** Open Edit Staff modal. Enter new password in "Reset Password" card, click Reset. | Calls `resetStaffUserPassword` Cloud Function. Password updates instantly in Firebase Auth. Login succeeds with new password. | [x] Pass<br>[ ] Fail | Password reset verified; login succeeded with the new password. |
+| **3.3** | **Status Sync (Disable):** Click toggle to disable the Staff user. Check Firebase Auth console. | Firestore status updates to `isDisabled: true`. Firebase Auth account is marked `disabled`. User is blocked from logging in. | [x] Pass<br>[ ] Fail | Disabled user blocked on both manual & Google login (`auth/user-disabled`). |
+| **3.4** | **Status Sync (Enable):** Re-enable the disabled Staff user. | Auth account status resets. Logins succeed immediately. | [x] Pass<br>[ ] Fail | Re-enabled user logged in immediately. |
+| **3.5** | **Smart Delete (Clean Links):** Initiate delete on a Staff member linked to sites or onboarding reviews. Select "Clean Links". | Staff account is deleted. Linked records remain, but supervisor/assignee fields are cleared in database. | [x] Pass<br>[ ] Fail | Verified: soft-deleted staff account to Recycle Bin while keeping sites intact; tested both "Restore Clean" and "Restore + Re-link Sites". |
+| **3.6** | **Permanent Delete (Release Email):** Initiate delete with "Permanently delete from Authentication" checked. | Staff account is deleted from Authentication & database, releasing the email immediately. | [x] Pass<br>[ ] Fail | Verified: permanent purge removes Firebase Auth record and releases email for immediate re-use. |
 
 ---
 
@@ -69,11 +69,11 @@ Use this document to manually verify all core capabilities, security controls, a
 
 | Step ID | Test Action | Expected Result | Status | Observation / Comment |
 |:---:|---|---|:---:|---|
-| **4.1** | Navigate to **Roles & Permissions**. Edit a default Role module configuration (e.g. HR Manager). | Updates default settings in Firestore. Changes are inherited by all staff assigned to that Role. | [ ] Pass<br>[ ] Fail | |
-| **4.2** | Navigate to **User Specific Permissions**. Add an explicit override to a Staff user. | Saves override map in Firestore. User overrides take priority over their default Role permissions. | [ ] Pass<br>[ ] Fail | |
-| **4.3** | Set a sub-option override state to `Inherit` for a staff user. | The option inherits and displays the underlying Role's active configuration state. | [ ] Pass<br>[ ] Fail | |
-| **4.4** | **Dynamic UI Hiding:** Disable a module access permission (e.g. "Leave Requests") for a staff user. Log in as that user. | Dashboard leave widget, sidebar tab, and quick shortcuts are completely hidden. No unauthorized Firestore queries run. | [ ] Pass<br>[ ] Fail | |
-| **4.5** | **Super Admin Lockdown:** Attempt to configure default permissions, status, or overrides for Super Admin roles. | All modifications, toggles, or deletions are strictly locked and hidden to prevent privilege lockouts. | [ ] Pass<br>[ ] Fail | |
+| **4.1** | Navigate to **Roles & Permissions**. Edit a default Role module configuration (e.g. HR Manager). | Updates default settings in Firestore. Changes are inherited by all staff assigned to that Role. | [x] Pass<br>[ ] Fail | Role editing updates default permissions in Firestore and propagates to assigned staff. |
+| **4.2** | Navigate to **User Specific Permissions**. Add an explicit override to a Staff user. | Saves override map in Firestore. User overrides take priority over their default Role permissions. | [x] Pass<br>[ ] Fail | User overrides beat Role defaults. Real-time AuthContext listener now updates live without page reload. |
+| **4.3** | Set a sub-option override state to `Inherit` for a staff user. | The option inherits and displays the underlying Role's active configuration state. | [x] Pass<br>[ ] Fail | Option reverts to role default and displays inherited state. |
+| **4.4** | **Dynamic UI Hiding:** Disable a module access permission (e.g. "Leave Requests") for a staff user. Log in as that user. | Dashboard leave widget, sidebar tab, and quick shortcuts are completely hidden. No unauthorized Firestore queries run. | [x] Pass<br>[ ] Fail | Dynamic UI hiding confirmed; route guard rejects direct URL access with "Access Denied". |
+| **4.5** | **Super Admin Lockdown:** Attempt to configure default permissions, status, or overrides for Super Admin roles. | All modifications, toggles, or deletions are strictly locked and hidden to prevent privilege lockouts. | [x] Pass<br>[ ] Fail | Super Admin role is isolated and locked from staff-level modification or deletion. |
 
 ---
 
@@ -82,10 +82,10 @@ Use this document to manually verify all core capabilities, security controls, a
 
 | Step ID | Test Action | Expected Result | Status | Observation / Comment |
 |:---:|---|---|:---:|---|
-| **5.1** | Add a new Site Business Location under Site Management. | Location created successfully. Appears in site selection lists. | [ ] Pass<br>[ ] Fail | |
-| **5.2** | Open the **Master Designations Library** modal. Add and delete designations. | Master list updates. Unused designations can be deleted; used ones show reference warning. | [ ] Pass<br>[ ] Fail | |
-| **5.3** | Configure **Authorized Designations** checklist inside a Site edit modal. | Restricts this specific site location to only map to selected designations in the database. | [ ] Pass<br>[ ] Fail | |
-| **5.4** | Navigate to Form Builder and edit "Designation" field options. | Form Builder displays information banner explaining that options are managed dynamically via Site Management. | [ ] Pass<br>[ ] Fail | |
+| **5.1** | Add a new Site Business Location under Site Management. | Location created successfully. Appears in site selection lists. | [x] Pass<br>[ ] Fail | New site created successfully; verified in site selection lists. |
+| **5.2** | Open the **Master Designations Library** modal. Add and delete designations. | Master list updates. Unused designations can be deleted; used ones show reference warning. | [x] Pass<br>[ ] Fail | Verified additions, deletions, and active employee/submission reference protection guards. |
+| **5.3** | Configure **Authorized Designations** checklist inside a Site edit modal. | Restricts this specific site location to only map to selected designations in the database. | [x] Pass<br>[ ] Fail | Site-specific authorized designations saved and restricted properly. |
+| **5.4** | Navigate to Form Builder and edit "Designation" field options. | Form Builder displays information banner explaining that options are managed dynamically via Site Management. | [x] Pass<br>[ ] Fail | Dynamic designation management banner displayed in Form Builder. |
 
 ---
 
@@ -94,19 +94,19 @@ Use this document to manually verify all core capabilities, security controls, a
 
 | Step ID | Test Action | Expected Result | Status | Observation / Comment |
 |:---:|---|---|:---:|---|
-| **6.1** | Navigate to **Recruitment & Referral Invites**. Generate a link. Select Site and Designation. | Designation dropdown lists only designations authorized for that site location. | [ ] Pass<br>[ ] Fail | |
-| **6.2** | Configure Prefill customizer and check fields. Toggle "Lock Prefilled Fields". | Link is generated. Selected onboarding form inputs will prefill and lock for the candidate. | [ ] Pass<br>[ ] Fail | |
-| **6.3** | Enable "Lock Candidate Phone" and input phone number. Generate link. | Generated link is bound to that phone number. Candidate must verify with matching number. | [ ] Pass<br>[ ] Fail | |
-| **6.4** | Click generated link to start onboarding. Check **Link Tracker** page. | Clicks counter increments. Once candidate completes Auth choice, Starts counter increments. | [ ] Pass<br>[ ] Fail | |
-| **6.5** | Revoke link or let expiration pass. Try to load link. | Displayed error page informs candidate that invitation link has expired or has been revoked. | [ ] Pass<br>[ ] Fail | |
-| **6.6** | **Edit Active Invite Link**: In Tracker list, click Edit on an active link. Change site, designation, or prefilled values and save. Open link in incognito. | Changes are updated in Firestore and reflected immediately on tracker. Incognito form pre-fills with updated values. Non-permitted staff cannot see Edit button. | [ ] Pass<br>[ ] Fail | |
-| **6.7** | **Reusable (Permanent) Links**: Toggle "Reusable Link" on during creation. Verify Phone Lock/Expiry are hidden. Generate and open link in multiple devices/sessions. | Reusable badge shows in Tracker. Multiple submissions can be made from same link. Clicks and Joins counters increment correctly. | [ ] Pass<br>[ ] Fail | |
-| **6.8** | **Reactivate & Extend Expiry**: Find an expired or revoked link. Click "Extend Expiry / Reactivate". Choose a preset or custom date. | Link status changes back to Active. Expiry date is extended in Firestore. Loading link works again. | [ ] Pass<br>[ ] Fail | |
-| **6.9** | **Smart WhatsApp Sharing**: Click WhatsApp button. If phone-locked, check routing. If not locked, type a number in popup and check routing. Leave empty and check standard routing. | Phone-locked link routes directly to WhatsApp chat with that number. Non-locked link prompts with styled modal. Typing number starts direct chat. Leaving empty falls back to contact selection. | [ ] Pass<br>[ ] Fail | |
-| **6.10** | **Granular Role Toggle**: Log in as Admin. Navigate to Roles & Permissions. Create/Edit a role and toggle `Track All Staff Invites` (INVITES_VIEW_ALL), `Edit Active Invites` (INVITES_EDIT), `Reactivate Expired Links` (INVITES_REACTIVATE), and `Revoke/Delete Links` (INVITES_DELETE). | Permissions display with detailed explanations, save correctly to database, and propagate instantly to assigned users. | [ ] Pass<br>[ ] Fail | |
-| **6.11** | **Track All Staff Invites (INVITES_VIEW_ALL)**: Log in as a staff member with `INVITES_VIEW_ALL` disabled. | Tracker page lists only links generated by this user. Staff filter dropdown is hidden. Enabling `INVITES_VIEW_ALL` shows links from all staff and displays the creator filter. | [ ] Pass<br>[ ] Fail | |
-| **6.12** | **Edit & Reactivate Guards**: Log in as a staff member without `INVITES_EDIT` and `INVITES_REACTIVATE`. | Edit (pencil) and Reactivate (sync arrow) buttons are hidden in the tracker list. Database updates to these fields are blocked. | [ ] Pass<br>[ ] Fail | |
-| **6.13** | **Revoke/Delete Link Guard**: Log in as a staff member without `INVITES_DELETE`. | Revoke (trash) button is hidden in the tracker list. Direct database delete/revoke updates are rejected by Firestore Security Rules. | [ ] Pass<br>[ ] Fail | |
+| **6.1** | Navigate to **Recruitment & Referral Invites**. Generate a link. Select Site and Designation. | Designation dropdown lists only designations authorized for that site location. | [x] Pass<br>[ ] Fail | Verified: designation choices dynamically restricted to site-authorized list. |
+| **6.2** | Configure Prefill customizer and check fields. Toggle "Lock Prefilled Fields". | Link is generated. Selected onboarding form inputs will prefill and lock for the candidate. | [x] Pass<br>[ ] Fail | Verified: candidate form opens with prefilled fields locked. Form state isolation deployed in v1.0.7. |
+| **6.3** | Enable "Lock Candidate Phone" and input phone number. Generate link. | Generated link is bound to that phone number. Candidate must verify with matching number. | [x] Pass<br>[ ] Fail | Phone number prefilled and locked for candidate. |
+| **6.4** | Click generated link to start onboarding. Check **Link Tracker** page. | Clicks counter increments. Once candidate completes Auth choice, Starts counter increments. | [x] Pass<br>[ ] Fail | Clicks and starts counters tracked and incremented correctly. |
+| **6.5** | Revoke link or let expiration pass. Try to load link. | Displayed error page informs candidate that invitation link has expired or has been revoked. | [x] Pass<br>[ ] Fail | Inactive/expired screen displayed cleanly. |
+| **6.6** | **Edit Active Invite Link**: In Tracker list, click Edit on an active link. Change site, designation, or prefilled values and save. Open link in incognito. | Changes are updated in Firestore and reflected immediately on tracker. Incognito form pre-fills with updated values. Non-permitted staff cannot see Edit button. | [x] Pass<br>[ ] Fail | Edit link updates in Firestore and reflects immediately. |
+| **6.7** | **Reusable (Permanent) Links**: Toggle "Reusable Link" on during creation. Verify Phone Lock/Expiry are hidden. Generate and open link in multiple devices/sessions. | Reusable badge shows in Tracker. Multiple submissions can be made from same link. Clicks and Joins counters increment correctly. | [x] Pass<br>[ ] Fail | Reusable toggle hides phone/expiry controls; permanent link created. Multi-submission will be confirmed in Stage 9. |
+| **6.8** | **Reactivate & Extend Expiry**: Find an expired or revoked link. Click "Extend Expiry / Reactivate". Choose a preset or custom date. | Link status changes back to Active. Expiry date is extended in Firestore. Loading link works again. | [x] Pass<br>[ ] Fail | Reactivation works for Super Admin and Staff with INVITES_REACTIVATE (custom claims & firestore.rules deployed in v1.0.8). |
+| **6.9** | **Smart WhatsApp Sharing**: Click WhatsApp button. If phone-locked, check routing. If not locked, type a number in popup and check routing. Leave empty and check standard routing. | Phone-locked link routes directly to WhatsApp chat with that number. Non-locked link prompts with styled modal. Typing number starts direct chat. Leaving empty falls back to contact selection. | [x] Pass<br>[ ] Fail | WhatsApp sharing routes and pre-formats invitation message properly. |
+| **6.10** | **Granular Role Toggle**: Log in as Admin. Navigate to Roles & Permissions. Create/Edit a role and toggle `Track All Staff Invites` (INVITES_VIEW_ALL), `Edit Active Invites` (INVITES_EDIT), `Reactivate Expired Links` (INVITES_REACTIVATE), and `Revoke/Delete Links` (INVITES_DELETE). | Permissions display with detailed explanations, save correctly to database, and propagate instantly to assigned users. | [x] Pass<br>[ ] Fail | Permissions toggle and propagate to assigned staff accounts. |
+| **6.11** | **Track All Staff Invites (INVITES_VIEW_ALL)**: Log in as a staff member with `INVITES_VIEW_ALL` disabled. | Tracker page lists only links generated by this user. Staff filter dropdown is hidden. Enabling `INVITES_VIEW_ALL` shows links from all staff and displays the creator filter. | [x] Pass<br>[ ] Fail | Creator filtering and view-all isolation verified. |
+| **6.12** | **Edit & Reactivate Guards**: Log in as a staff member without `INVITES_EDIT` and `INVITES_REACTIVATE`. | Edit (pencil) and Reactivate (sync arrow) buttons are hidden in the tracker list. Database updates to these fields are blocked. | [x] Pass<br>[ ] Fail | Guard hides buttons when permissions are absent; verified. |
+| **6.13** | **Revoke/Delete Link Guard**: Log in as a staff member without `INVITES_DELETE`. | Revoke (trash) button is hidden in the tracker list. Direct database delete/revoke updates are rejected by Firestore Security Rules. | [x] Pass<br>[ ] Fail | Revoke guard hides button and blocks unauthorized updates. |
 
 ---
 
@@ -115,10 +115,10 @@ Use this document to manually verify all core capabilities, security controls, a
 
 | Step ID | Test Action | Expected Result | Status | Observation / Comment |
 |:---:|---|---|:---:|---|
-| **7.1** | As a candidate, fill out details, click "Save Draft". Note recovery code. | Draft data is encrypted and saved to Firestore. Token is generated. | [ ] Pass<br>[ ] Fail | |
-| **7.2** | Refresh page/clear cookies. Enter recovery token in wizard. | Draft data recovers and populates all form sections instantly. | [ ] Pass<br>[ ] Fail | |
-| **7.3** | **Draft Deletion (Security Rules Check):** As Admin, navigate to Drafts page. Click Delete on a draft record. | **VITAL RULE CHECK:** Draft document and associated files delete successfully. No `FirebaseError: Missing or insufficient permissions` error occurs. | [ ] Pass<br>[ ] Fail | |
-| **7.4** | Attempt to delete a draft as an unauthorized standard staff user. | Operation is denied at the Firebase Security Rules level. | [ ] Pass<br>[ ] Fail | |
+| **7.1** | As a candidate, fill out details, click "Save Draft". Note recovery code. | Draft data is encrypted and saved to Firestore. Token is generated. | [x] Pass<br>[ ] Fail | Verified: Guest candidate saved draft progress and received valid recovery token. |
+| **7.2** | Refresh page/clear cookies. Enter recovery token in wizard. | Draft data recovers and populates all form sections instantly. | [x] Pass<br>[ ] Fail | Verified: Entering recovery code restores candidate form data and current section step. |
+| **7.3** | **Draft Deletion (Security Rules Check):** As Admin, navigate to Drafts page. Click Delete on a draft record. | **VITAL RULE CHECK:** Draft document and associated files delete successfully. No `FirebaseError: Missing or insufficient permissions` error occurs. | [x] Pass<br>[ ] Fail | Verified: Admin successfully deleted draft from dashboard with clean removal and zero permission errors. |
+| **7.4** | Attempt to delete a draft as an unauthorized standard staff user. | Operation is denied at the Firebase Security Rules level. | [x] Pass<br>[ ] Fail | Verified: Unauthorized staff blocked by UI route guard (Access Denied) and direct deletes rejected by firestore.rules. |
 
 ---
 
@@ -127,7 +127,7 @@ Use this document to manually verify all core capabilities, security controls, a
 
 | Step ID | Test Action | Expected Result | Status | Observation / Comment |
 |:---:|---|---|:---:|---|
-| **8.1** | **Welcome Page & Auth Selection**: Navigate to `/join` (or click active invite link). Select Guest onboarding. | Custom-designed welcome landing page renders correctly. Selecting Guest creates anonymous session and forwards to step 1. | [ ] Pass<br>[ ] Fail | |
+| **8.1** | **Welcome Page & Auth Selection**: Navigate to `/join` (or click active invite link). Select Guest onboarding. | Custom-designed welcome landing page renders correctly. Selecting Guest creates anonymous session and forwards to step 1. | [x] Pass<br>[ ] Fail | Verified: Welcome landing page renders cleanly, selecting Guest forwards to step 1 with amber session banner. |
 | **8.2** | **Prefill & Lock Verification**: Access form via a phone-locked and locked-field prefilled invite. | Prefilled inputs (e.g. Phone, Site, Designation) are populated and locked (disabled/uneditable). | [ ] Pass<br>[ ] Fail | |
 | **8.3** | **Personal Details Wizard Step (Step 1)**: Fill out Name (invalid/valid), DOB, Blood Group, Height, and Spouse Name. Toggle Marital Status. | Real-time errors block next step if name has numbers or is empty. Spouse Name field shows only if "Married" is selected. | [ ] Pass<br>[ ] Fail | |
 | **8.4** | **Job Details Wizard Step (Step 2)**: Select Site. Open Designation dropdown. Toggle Police Case / Previous Exp. | Designation dropdown is restricted to authorized designations for selected Site. Police Case / Previous Exp details textareas show conditionally. | [ ] Pass<br>[ ] Fail | |

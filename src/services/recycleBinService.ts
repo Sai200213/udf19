@@ -62,16 +62,77 @@ export async function moveToRecycleBin(params: {
   return docRef.id;
 }
 
+async function syncRestoredStaffSitesLocal(
+  staffId: string,
+  savedSiteIds: string[],
+  shouldRestoreLinks: boolean
+): Promise<string[]> {
+  const targetIds = new Set((Array.isArray(savedSiteIds) ? savedSiteIds : []).filter(Boolean));
+  const sitesDocRef = doc(db, SETTINGS_COLLECTION, 'sites');
+  const sitesSnap = await getDoc(sitesDocRef);
+  if (!sitesSnap.exists()) {
+    return shouldRestoreLinks ? Array.from(targetIds) : [];
+  }
+
+  const currentSites: Site[] = sitesSnap.data().sites || [];
+  let modified = false;
+  const validSiteIds: string[] = [];
+
+  const updatedSites = currentSites.map((s) => {
+    if (!s || !s.id) return s;
+    let supervisorIds = Array.isArray(s.supervisorIds)
+      ? s.supervisorIds.filter(Boolean)
+      : (s.supervisorId ? [s.supervisorId] : []);
+    let supervisorId = s.supervisorId || '';
+
+    if (shouldRestoreLinks && targetIds.has(s.id)) {
+      validSiteIds.push(s.id);
+      if (!supervisorIds.includes(staffId)) {
+        supervisorIds = [...supervisorIds, staffId];
+        modified = true;
+      }
+      if (!supervisorId) {
+        supervisorId = staffId;
+        modified = true;
+      }
+      return { ...s, supervisorId, supervisorIds };
+    }
+
+    if (!shouldRestoreLinks && (supervisorId === staffId || supervisorIds.includes(staffId))) {
+      supervisorIds = supervisorIds.filter((id) => id !== staffId);
+      if (supervisorId === staffId) {
+        supervisorId = supervisorIds[0] || '';
+      }
+      modified = true;
+      return { ...s, supervisorId, supervisorIds };
+    }
+
+    return s;
+  });
+
+  if (modified) {
+    await updateDoc(sitesDocRef, { sites: updatedSites });
+  }
+  return shouldRestoreLinks ? validSiteIds : [];
+}
+
 /**
  * Restore an item from the Recycle Bin back to its original state and collection.
  */
-export async function restoreFromRecycleBin(recycleBinItemId: string): Promise<{ success: boolean; message: string }> {
+export async function restoreFromRecycleBin(
+  recycleBinItemId: string,
+  options?: { restoreSiteLinks?: boolean }
+): Promise<{ success: boolean; message: string }> {
+  const restoreSiteLinks = options?.restoreSiteLinks !== false;
   try {
-    const fn = httpsCallable<{ recycleBinItemId: string }, { success: boolean; message: string }>(
+    const fn = httpsCallable<
+      { recycleBinItemId: string; restoreSiteLinks?: boolean },
+      { success: boolean; message: string }
+    >(
       functions,
       'restoreRecycleBinServer'
     );
-    const res = await fn({ recycleBinItemId });
+    const res = await fn({ recycleBinItemId, restoreSiteLinks });
     if (res.data && res.data.success) {
       return res.data;
     }
@@ -142,10 +203,17 @@ export async function restoreFromRecycleBin(recycleBinItemId: string): Promise<{
           throw new Error('Unauthorized: Only SuperAdmin can restore accounts with SuperAdmin privileges.');
         }
 
-        // Restore staff account to staff_accounts collection
+        const savedSiteIds = Array.from(new Set([
+          ...(Array.isArray(binItem.metadata?.linkedSites) ? binItem.metadata.linkedSites : []),
+          ...(Array.isArray(restoredData.sitesManaged) ? restoredData.sitesManaged : [])
+        ])).filter(Boolean);
+        const finalSiteIds = await syncRestoredStaffSitesLocal(originalId, savedSiteIds, restoreSiteLinks);
+
+        // Restore staff account to staff_accounts collection with synchronized sitesManaged
         const staffRef = doc(db, 'staff_accounts', originalId);
         await setDoc(staffRef, {
           ...restoredData,
+          sitesManaged: finalSiteIds,
           isDisabled: false,
           isDeleted: false,
           deletedAt: null,

@@ -166,6 +166,61 @@ exports.checkGlobalUniqueness = secureOnCall(async (request) => {
     }
 });
 
+/**
+ * Checks whether an existing Firebase Auth user (whose email triggered auth/email-already-exists)
+ * has any linked record in Firestore or Recycle Bin before treating it as a removable orphan.
+ */
+async function resolveExistingAuthEmailConflict(db, normalizedEmail) {
+    const existingAuth = await admin.auth().getUserByEmail(normalizedEmail);
+    const uid = existingAuth.uid;
+
+    const [
+        recycleSnap,
+        userDoc,
+        staffDoc,
+        legacyStaffDoc,
+        empDoc,
+        empUidSnap,
+        subDoc,
+        subUidSnap,
+        subEmailSnap,
+    ] = await Promise.all([
+        db.collection('recycle_bin').where('originalId', '==', uid).limit(1).get(),
+        db.collection('users').doc(uid).get(),
+        db.collection('staff_accounts').doc(uid).get(),
+        db.collection('staff').doc(uid).get(),
+        db.collection('employees').doc(uid).get(),
+        db.collection('employees').where('uid', '==', uid).limit(1).get(),
+        db.collection('onboarding_submissions').doc(uid).get(),
+        db.collection('onboarding_submissions').where('linkedUid', '==', uid).limit(1).get(),
+        db.collection('onboarding_submissions').where('email', '==', normalizedEmail).limit(1).get(),
+    ]);
+
+    if (!recycleSnap.empty) {
+        throw new functions.https.HttpsError(
+            'already-exists',
+            'This email belongs to a soft-deleted account in the Recycle Bin. Restore or permanently delete it from Recycle Bin first.'
+        );
+    }
+
+    const hasLinkedRecord =
+        userDoc.exists ||
+        staffDoc.exists ||
+        legacyStaffDoc.exists ||
+        empDoc.exists ||
+        !empUidSnap.empty ||
+        subDoc.exists ||
+        !subUidSnap.empty ||
+        !subEmailSnap.empty;
+
+    if (hasLinkedRecord) {
+        throw new functions.https.HttpsError('already-exists', 'Email already exists in Authentication system');
+    }
+
+    // Confirmed orphan Auth record with zero Firestore references: delete so creation can proceed cleanly.
+    await admin.auth().deleteUser(uid);
+}
+
 // Create a staff user
 exports.createStaffUser = secureOnCall(async (request) => {
     if (!request.auth) {
@@ -192,21 +247,33 @@ exports.createStaffUser = secureOnCall(async (request) => {
     try {
         // SYSTEMIC FIX: Check all collections for collision BEFORE creating auth user
         const db = admin.firestore();
-        const [userSnap, staffSnapCurrent, empSnap] = await Promise.all([
-            db.collection('users').where('email', '==', normalizedEmail).get(),
-            db.collection('staff_accounts').where('email', '==', normalizedEmail).get(),
-            db.collection('employees').where('email', '==', normalizedEmail).get()
+        const [userSnap, staffSnapCurrent, legacyStaffSnap, empSnap, empLinkedSnap, empNestedSnap] = await Promise.all([
+            db.collection('users').where('email', '==', normalizedEmail).limit(1).get(),
+            db.collection('staff_accounts').where('email', '==', normalizedEmail).limit(1).get(),
+            db.collection('staff').where('email', '==', normalizedEmail).limit(1).get(),
+            db.collection('employees').where('email', '==', normalizedEmail).limit(1).get(),
+            db.collection('employees').where('linkedGoogleEmail', '==', normalizedEmail).limit(1).get(),
+            db.collection('employees').where('profileData.personalDetails.email', '==', normalizedEmail).limit(1).get(),
         ]);
 
-        if (!userSnap.empty || !staffSnapCurrent.empty || !empSnap.empty) {
+        if (!userSnap.empty || !staffSnapCurrent.empty || !legacyStaffSnap.empty || !empSnap.empty || !empLinkedSnap.empty || !empNestedSnap.empty) {
             throw new functions.https.HttpsError('already-exists', 'Email is already registered as Admin, Staff, or Employee.');
         }
 
-        const userRecord = await admin.auth().createUser({
+        const createAuthPayload = {
             email: normalizedEmail,
             password: password,
             displayName: name,
-        });
+        };
+
+        let userRecord;
+        try {
+            userRecord = await admin.auth().createUser(createAuthPayload);
+        } catch (createErr) {
+            if (createErr.code !== 'auth/email-already-exists') throw createErr;
+            await resolveExistingAuthEmailConflict(db, normalizedEmail);
+            userRecord = await admin.auth().createUser(createAuthPayload);
+        }
 
         const staffData = {
             id: userRecord.uid,
@@ -229,7 +296,7 @@ exports.createStaffUser = secureOnCall(async (request) => {
         };
     } catch (error) {
         console.error('Error creating user:', error);
-        if (error.code === 'already-exists') throw error; // Re-throw our collision error
+        if (error instanceof functions.https.HttpsError || error.code === 'already-exists') throw error;
         if (error.code === 'auth/email-already-exists') {
             throw new functions.https.HttpsError('already-exists', 'Email already exists in Authentication system');
         }
@@ -6909,6 +6976,59 @@ exports.permanentDeleteEmployeeServer = secureOnCall({ timeoutSeconds: 300, memo
 });
 
 /**
+ * Synchronizes restored staff site links between staff_accounts.sitesManaged and settings/sites.
+ */
+async function syncRestoredStaffSitesServer(db, staffId, savedSiteIds, shouldRestoreLinks) {
+    const targetIds = new Set((Array.isArray(savedSiteIds) ? savedSiteIds : []).filter(Boolean));
+    const sitesRef = db.collection('settings').doc('sites');
+    const sitesSnap = await sitesRef.get();
+    if (!sitesSnap.exists) {
+        return shouldRestoreLinks ? Array.from(targetIds) : [];
+    }
+
+    const currentSites = Array.isArray(sitesSnap.data().sites) ? sitesSnap.data().sites : [];
+    let modified = false;
+    const validSiteIds = [];
+
+    const updatedSites = currentSites.map((s) => {
+        if (!s || !s.id) return s;
+        let supervisorIds = Array.isArray(s.supervisorIds)
+            ? s.supervisorIds.filter(Boolean)
+            : (s.supervisorId ? [s.supervisorId] : []);
+        let supervisorId = s.supervisorId || '';
+
+        if (shouldRestoreLinks && targetIds.has(s.id)) {
+            validSiteIds.push(s.id);
+            if (!supervisorIds.includes(staffId)) {
+                supervisorIds = [...supervisorIds, staffId];
+                modified = true;
+            }
+            if (!supervisorId) {
+                supervisorId = staffId;
+                modified = true;
+            }
+            return { ...s, supervisorId, supervisorIds };
+        }
+
+        if (!shouldRestoreLinks && (supervisorId === staffId || supervisorIds.includes(staffId))) {
+            supervisorIds = supervisorIds.filter((id) => id !== staffId);
+            if (supervisorId === staffId) {
+                supervisorId = supervisorIds[0] || '';
+            }
+            modified = true;
+            return { ...s, supervisorId, supervisorIds };
+        }
+
+        return s;
+    });
+
+    if (modified) {
+        await sitesRef.update({ sites: updatedSites });
+    }
+    return shouldRestoreLinks ? validSiteIds : [];
+}
+
+/**
  * 2. restoreRecycleBinServer
  * Server-enforced restoration of items from Recycle Bin with validation and sanitization.
  */
@@ -6921,7 +7041,7 @@ exports.restoreRecycleBinServer = secureOnCall({ timeoutSeconds: 60 }, async (re
         throw new functions.https.HttpsError('permission-denied', 'Account is disabled.');
     }
 
-    const { recycleBinItemId } = request.data || {};
+    const { recycleBinItemId, restoreSiteLinks = true } = request.data || {};
     if (!recycleBinItemId || typeof recycleBinItemId !== 'string') {
         throw new functions.https.HttpsError('invalid-argument', 'recycleBinItemId is required.');
     }
@@ -6998,10 +7118,18 @@ exports.restoreRecycleBinServer = secureOnCall({ timeoutSeconds: 60 }, async (re
         }
 
         case 'STAFF': {
+            const shouldRestoreSites = restoreSiteLinks !== false;
+            const savedSiteIds = Array.from(new Set([
+                ...(Array.isArray(metadata?.linkedSites) ? metadata.linkedSites : []),
+                ...(Array.isArray(data?.sitesManaged) ? data.sitesManaged : [])
+            ])).filter(Boolean);
+            const finalSiteIds = await syncRestoredStaffSitesServer(db, originalId, savedSiteIds, shouldRestoreSites);
+
             const staffRef = db.collection('staff_accounts').doc(originalId);
             await staffRef.set({
                 ...(data || {}),
                 id: originalId,
+                sitesManaged: finalSiteIds,
                 isDisabled: false,
                 isActive: true,
                 status: 'Active',

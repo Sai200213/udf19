@@ -66,18 +66,82 @@ if (typeof window !== 'undefined') {
     }
   } catch (_) {}
 
-  const isUserActivelyTyping = (): boolean => {
+  const editedElements = new Set<HTMLElement>();
+
+  const isSearchField = (el: HTMLElement): boolean => {
+    if (el instanceof HTMLInputElement && el.type === 'search') return true;
+    const hint = `${el.getAttribute('placeholder') || ''} ${el.getAttribute('aria-label') || ''} ${el.getAttribute('name') || ''}`;
+    return /\bsearch\b/i.test(hint);
+  };
+
+  const setEdited = (el: HTMLElement, isDirty: boolean) => {
+    if (isDirty) editedElements.add(el);
+    else editedElements.delete(el);
+  };
+
+  const trackFieldEdit = (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || isSearchField(target)) return;
+
+    if (target instanceof HTMLInputElement && (target.type === 'checkbox' || target.type === 'radio')) {
+      editedElements.add(target);
+      return;
+    }
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      setEdited(target, target.value.trim().length > 0);
+      return;
+    }
+    if (target instanceof HTMLSelectElement) {
+      editedElements.add(target);
+      return;
+    }
+    if (target.isContentEditable) {
+      setEdited(target, (target.textContent || '').trim().length > 0);
+    }
+  };
+
+  document.addEventListener('input', trackFieldEdit, { capture: true, passive: true });
+  document.addEventListener('change', trackFieldEdit, { capture: true, passive: true });
+  document.addEventListener(
+    'submit',
+    (event) => {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      editedElements.forEach((el) => {
+        if (form.contains(el)) editedElements.delete(el);
+      });
+    },
+    { capture: true, passive: true }
+  );
+
+  const hasOpenModal = (): boolean => {
+    const dialogs = document.querySelectorAll(
+      '[role="dialog"], [aria-modal="true"], div.fixed.inset-0[class*="z-50"], div.fixed.inset-0[class*="z-[60]"], div.fixed.inset-0[class*="z-[100]"]'
+    );
+    return Array.from(dialogs).some((el) => !el.classList.contains('pointer-events-none'));
+  };
+
+  const hasActiveWorkInProgress = (): boolean => {
+    editedElements.forEach((el) => {
+      if (!el.isConnected) editedElements.delete(el);
+    });
+
     const activeEl = document.activeElement;
-    if (!activeEl) return false;
-    const tag = activeEl.tagName.toLowerCase();
-    return tag === 'input' || tag === 'textarea' || (activeEl as HTMLElement).isContentEditable;
+    if (activeEl instanceof HTMLElement) {
+      const tag = activeEl.tagName.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || activeEl.isContentEditable) {
+        return true;
+      }
+    }
+
+    return hasOpenModal() || editedElements.size > 0;
   };
 
   const triggerSafeReload = (newVersionLabel = APP_VERSION, force = false) => {
     if (isUpdateReloading) return;
 
-    if (!force && isUserActivelyTyping()) {
-      // Protect user's typing in forms: Show a non-destructive floating banner instead of abruptly reloading
+    if (!force && hasActiveWorkInProgress()) {
+      // Protect open modals and unsaved form data: show a non-destructive prompt instead of reloading
       if ((window as any).__UDF_UPDATE_PENDING) return;
       (window as any).__UDF_UPDATE_PENDING = true;
       toast(
@@ -116,7 +180,14 @@ if (typeof window !== 'undefined') {
 
   // 1. Service Worker Update Trigger (Employee Portal & Public Site)
   if ('serviceWorker' in navigator) {
+    // Only treat controllerchange as an update when replacing an active controller,
+    // not on initial clients.claim() in Incognito or first-ever visits.
+    let hadController = Boolean(navigator.serviceWorker.controller);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) {
+        hadController = true;
+        return;
+      }
       triggerSafeReload(APP_VERSION);
     });
 

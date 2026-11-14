@@ -344,6 +344,42 @@
           "function": "syncSubmissionToSheetsServer"
         },
         {
+          "source": "/api/permanentDeleteEmployeeServer",
+          "function": "permanentDeleteEmployeeServer"
+        },
+        {
+          "source": "/api/restoreRecycleBinServer",
+          "function": "restoreRecycleBinServer"
+        },
+        {
+          "source": "/api/deleteSiteServer",
+          "function": "deleteSiteServer"
+        },
+        {
+          "source": "/api/promoteEmployeeServer",
+          "function": "promoteEmployeeServer"
+        },
+        {
+          "source": "/api/bulkImportEmployeesServer",
+          "function": "bulkImportEmployeesServer"
+        },
+        {
+          "source": "/api/recordDailyStreakServer",
+          "function": "recordDailyStreakServer"
+        },
+        {
+          "source": "/api/redeemRewardServer",
+          "function": "redeemRewardServer"
+        },
+        {
+          "source": "/api/sendNotificationServer",
+          "function": "sendNotificationServer"
+        },
+        {
+          "source": "/api/completeBgvReviewServer",
+          "function": "completeBgvReviewServer"
+        },
+        {
           "source": "**",
           "destination": "/index.html"
         }
@@ -640,6 +676,42 @@
           "function": "syncSubmissionToSheetsServer"
         },
         {
+          "source": "/api/permanentDeleteEmployeeServer",
+          "function": "permanentDeleteEmployeeServer"
+        },
+        {
+          "source": "/api/restoreRecycleBinServer",
+          "function": "restoreRecycleBinServer"
+        },
+        {
+          "source": "/api/deleteSiteServer",
+          "function": "deleteSiteServer"
+        },
+        {
+          "source": "/api/promoteEmployeeServer",
+          "function": "promoteEmployeeServer"
+        },
+        {
+          "source": "/api/bulkImportEmployeesServer",
+          "function": "bulkImportEmployeesServer"
+        },
+        {
+          "source": "/api/recordDailyStreakServer",
+          "function": "recordDailyStreakServer"
+        },
+        {
+          "source": "/api/redeemRewardServer",
+          "function": "redeemRewardServer"
+        },
+        {
+          "source": "/api/sendNotificationServer",
+          "function": "sendNotificationServer"
+        },
+        {
+          "source": "/api/completeBgvReviewServer",
+          "function": "completeBgvReviewServer"
+        },
+        {
           "source": "**",
           "destination": "/index.html"
         }
@@ -934,6 +1006,42 @@
         {
           "source": "/api/syncSubmissionToSheetsServer",
           "function": "syncSubmissionToSheetsServer"
+        },
+        {
+          "source": "/api/permanentDeleteEmployeeServer",
+          "function": "permanentDeleteEmployeeServer"
+        },
+        {
+          "source": "/api/restoreRecycleBinServer",
+          "function": "restoreRecycleBinServer"
+        },
+        {
+          "source": "/api/deleteSiteServer",
+          "function": "deleteSiteServer"
+        },
+        {
+          "source": "/api/promoteEmployeeServer",
+          "function": "promoteEmployeeServer"
+        },
+        {
+          "source": "/api/bulkImportEmployeesServer",
+          "function": "bulkImportEmployeesServer"
+        },
+        {
+          "source": "/api/recordDailyStreakServer",
+          "function": "recordDailyStreakServer"
+        },
+        {
+          "source": "/api/redeemRewardServer",
+          "function": "redeemRewardServer"
+        },
+        {
+          "source": "/api/sendNotificationServer",
+          "function": "sendNotificationServer"
+        },
+        {
+          "source": "/api/completeBgvReviewServer",
+          "function": "completeBgvReviewServer"
         },
         {
           "source": "**",

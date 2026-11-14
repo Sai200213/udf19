@@ -74,6 +74,10 @@ const AdminStaffManagementPage: React.FC<AdminStaffManagementPageProps> = ({
   const [transferMode, setTransferMode] = useState<'REPLACE' | 'CO_SUPERVISOR'>('REPLACE');
   const [isTransferring, setIsTransferring] = useState(false);
 
+  // Status Toggle / Rehire Site Hygiene Modal State
+  const [statusActionStaff, setStatusActionStaff] = useState<StaffUser | null>(null);
+  const [resetOverridesOnRehire, setResetOverridesOnRehire] = useState(false);
+
   // Smart Delete State
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [staffToDelete, setStaffToDelete] = useState<string | null>(null);
@@ -333,7 +337,61 @@ const AdminStaffManagementPage: React.FC<AdminStaffManagementPageProps> = ({
     }
   };
 
-  // Toggle Enable/Disable
+  // Shared status execution supporting Enterprise Rehire / Offboarding site hygiene
+  const executeStatusToggle = async (
+    staff: StaffUser,
+    siteAction: 'keep-sites' | 'clear-sites',
+    clearOverrides = false
+  ) => {
+    const newState = !staff.isDisabled;
+    setIsLoading(true);
+    try {
+      await setStaffUserStatus(staff.id, newState);
+
+      let updatedSitesManaged = Array.isArray(staff.sitesManaged) ? staff.sitesManaged : [];
+      let updatedOverrides = staff.permissionOverrides;
+
+      if (siteAction === 'clear-sites') {
+        const staffDocUpdates: Record<string, any> = { sitesManaged: [] };
+        if (clearOverrides) {
+          staffDocUpdates.permissionOverrides = {};
+          updatedOverrides = {};
+        }
+        await setDoc(doc(db, 'staff_accounts', staff.id), staffDocUpdates, { merge: true });
+        await syncStaffSitesToDatabase(staff.id, []);
+        updatedSitesManaged = [];
+      } else if (!newState) {
+        // Re-enabling with kept sites: ensure settings/sites stays synced with sitesManaged
+        const keptIds = getStaffAssignedSiteIds(staff);
+        await syncStaffSitesToDatabase(staff.id, keptIds);
+      }
+
+      setStaffUsers(prev => prev.map(s =>
+        s.id === staff.id
+          ? {
+              ...s,
+              isDisabled: newState,
+              sitesManaged: updatedSitesManaged,
+              ...(updatedOverrides !== undefined ? { permissionOverrides: updatedOverrides } : {})
+            }
+          : s
+      ));
+
+      const actionLabel = newState
+        ? (siteAction === 'clear-sites' ? 'Disabled & unassigned all sites' : 'Disabled staff account')
+        : (siteAction === 'clear-sites' ? 'Re-enabled (Fresh Rehire) with old sites cleared' : 'Re-enabled staff account');
+      onNotify(`${staff.name}: ${actionLabel}.`, 'info');
+      if (logAction) logAction('STATUS_CHANGE', 'STAFF', `${actionLabel}: ${staff.name}`);
+      setStatusActionStaff(null);
+      setResetOverridesOnRehire(false);
+    } catch (err: any) {
+      onNotify(err.message || "Failed to toggle staff status", "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Toggle Enable/Disable (prompts with site handover/rehire hygiene if sites are attached)
   const toggleStaffStatus = async (id: string) => {
     if (id === loggedInUserId) {
       onNotify("You cannot disable your own account.", "error");
@@ -343,24 +401,14 @@ const AdminStaffManagementPage: React.FC<AdminStaffManagementPageProps> = ({
     const staff = staffUsers.find(s => s.id === id);
     if (!staff) return;
 
-    const newState = !staff.isDisabled;
-    setIsLoading(true);
-    try {
-      await setStaffUserStatus(id, newState);
-
-      setStaffUsers(prev => prev.map(s => {
-        if (s.id === id) {
-          onNotify(`Account for ${s.name} has been ${newState ? 'disabled' : 're-enabled'}.`, 'info');
-          if (logAction) logAction('STATUS_CHANGE', 'STAFF', `${newState ? 'Disabled' : 'Enabled'} staff account: ${s.name}`);
-          return { ...s, isDisabled: newState };
-        }
-        return s;
-      }));
-    } catch (err: any) {
-      onNotify(err.message || "Failed to toggle staff status", "error");
-    } finally {
-      setIsLoading(false);
+    const assignedIds = getStaffAssignedSiteIds(staff);
+    if (assignedIds.length > 0) {
+      setStatusActionStaff(staff);
+      setResetOverridesOnRehire(false);
+      return;
     }
+
+    await executeStatusToggle(staff, 'keep-sites');
   };
 
   // Direct Password Reset
@@ -493,18 +541,19 @@ const AdminStaffManagementPage: React.FC<AdminStaffManagementPageProps> = ({
     try {
       const links: DeleteLinks = { sites: [], employees: [], submissions: [] };
 
-      // 1. Check sites
+      // 1. Check sites (combine settings/sites supervisor links and staff.sitesManaged)
       try {
+        const staffObj = staffUsers.find(s => s.id === id);
+        const managedIds = new Set(Array.isArray(staffObj?.sitesManaged) ? staffObj!.sitesManaged : []);
         const sitesDocRef = doc(db, SETTINGS_COLLECTION, 'sites');
         const sitesSnap = await getDoc(sitesDocRef);
-        if (sitesSnap.exists()) {
-          const allSites: Site[] = sitesSnap.data().sites || [];
-          allSites.forEach(site => {
-            if (site.supervisorId === id || (Array.isArray(site.supervisorIds) && site.supervisorIds.includes(id))) {
-              links.sites.push({ id: site.id, name: site.name });
-            }
-          });
-        }
+        const allSites: Site[] = sitesSnap.exists() ? (sitesSnap.data().sites || []) : sites;
+        allSites.forEach(site => {
+          const linkedOnSite = site.supervisorId === id || (Array.isArray(site.supervisorIds) && site.supervisorIds.includes(id));
+          if (linkedOnSite || managedIds.has(site.id)) {
+            links.sites.push({ id: site.id, name: site.name });
+          }
+        });
       } catch (_) { /* ignore */ }
 
       // 2. Check active employees
@@ -546,7 +595,10 @@ const AdminStaffManagementPage: React.FC<AdminStaffManagementPageProps> = ({
           deletedByUid: loggedInUserId,
           deletedByName: 'Super Admin',
           metadata: {
-            linkedSites: deleteLinks.sites.map(s => s.id),
+            linkedSites: Array.from(new Set([
+              ...deleteLinks.sites.map(s => s.id),
+              ...(Array.isArray(staffObj?.sitesManaged) ? staffObj.sitesManaged : [])
+            ])).filter(Boolean),
             linkedEmployeesCount: deleteLinks.employees.length
           }
         });
@@ -1572,15 +1624,112 @@ const AdminStaffManagementPage: React.FC<AdminStaffManagementPageProps> = ({
                 {hasLinks && (
                   <div className="px-4 py-2 bg-amber-50 border-t border-amber-100">
                     <p className="text-xs text-amber-700 space-y-1">
-                      <strong>Delete Account Only</strong> — Deletes only the staff account. Linked records remain unchanged (may cause orphan references).<br />
-                      <strong>Delete & Clean Links</strong> — Deletes the staff account and unassigns them from all linked sites, employees, and submissions.<br />
-                      <strong>Delete + Entire Records</strong> — Deletes the staff account and completely deletes all associated sites, employees, and submissions.
+                      <strong>Transfer Sites First</strong> — Hand over all managed sites to another staff member before deleting.<br />
+                      <strong>Delete to Recycle Bin (Keep Sites Safe)</strong> — Archives the staff account for 30 days and safely unassigns them from sites/employees/submissions.<br />
+                      <strong>Permanently Delete (Release Email)</strong> — Permanently removes Authentication & frees the email immediately while keeping all sites and employee records intact.
                     </p>
                   </div>
                 )}
               </div>
             )}
           </div>
+        </Modal>
+      )}
+
+      {/* 5. Offboarding / Rehire Site Hygiene Modal */}
+      {statusActionStaff && (
+        <Modal
+          isOpen={Boolean(statusActionStaff)}
+          onClose={() => { if (!isLoading) setStatusActionStaff(null); }}
+          title={statusActionStaff.isDisabled ? `Re-enable / Rehire: ${statusActionStaff.name}` : `Disable Staff: ${statusActionStaff.name}`}
+          footer={
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setStatusActionStaff(null)}
+                disabled={isLoading}
+              >
+                Cancel
+              </Button>
+              {!statusActionStaff.isDisabled && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const target = statusActionStaff;
+                    setStatusActionStaff(null);
+                    initiateTransfer(target);
+                  }}
+                  disabled={isLoading}
+                  className="border border-indigo-300 text-indigo-700 hover:bg-indigo-50 text-xs"
+                >
+                  Transfer Sites First
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                onClick={() => executeStatusToggle(statusActionStaff, 'keep-sites')}
+                disabled={isLoading}
+                className="text-xs"
+              >
+                {statusActionStaff.isDisabled ? 'Keep Previous Sites & Enable' : 'Disable Only (Keep Sites)'}
+              </Button>
+              <Button
+                variant={statusActionStaff.isDisabled ? 'primary' : 'danger'}
+                onClick={() => executeStatusToggle(statusActionStaff, 'clear-sites', resetOverridesOnRehire)}
+                disabled={isLoading}
+                className="text-xs font-bold"
+              >
+                {isLoading && <Loader2 size={14} className="animate-spin mr-1" />}
+                {statusActionStaff.isDisabled ? 'Clear Old Sites & Enable (Fresh Rehire)' : 'Disable & Unassign All Sites'}
+              </Button>
+            </div>
+          }
+        >
+          {(() => {
+            const attachedSites = getStaffAssignedSites(statusActionStaff);
+            return (
+              <div className="space-y-3 text-sm text-gray-700">
+                <div className={`p-3 rounded-xl border text-xs ${
+                  statusActionStaff.isDisabled
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}>
+                  <p className="font-bold">
+                    {statusActionStaff.isDisabled
+                      ? `This account still has ${attachedSites.length} old site assignment(s).`
+                      : `This staff member currently supervises ${attachedSites.length} site(s).`}
+                  </p>
+                  <p className="mt-1">
+                    {statusActionStaff.isDisabled
+                      ? 'If this person left and is returning for different sites, clear their old sites before enabling so previous sites remain protected.'
+                      : 'Choose whether to hand over/unassign their sites cleanly now, or keep links for a temporary suspension.'}
+                  </p>
+                </div>
+
+                {attachedSites.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {attachedSites.map(s => (
+                      <span key={s.id} className="px-2 py-0.5 bg-gray-100 border border-gray-200 rounded-md text-xs text-gray-700 font-medium">
+                        {s.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {statusActionStaff.isDisabled && (
+                  <label className="flex items-center gap-2 p-2.5 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer text-xs text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={resetOverridesOnRehire}
+                      onChange={e => setResetOverridesOnRehire(e.target.checked)}
+                      className="h-4 w-4 text-blue-600 rounded border-gray-300"
+                    />
+                    <span>Also reset user-specific permission overrides (start strictly with Role defaults)</span>
+                  </label>
+                )}
+              </div>
+            );
+          })()}
         </Modal>
       )}
     </div>

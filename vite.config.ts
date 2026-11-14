@@ -3,6 +3,7 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { APP_VERSION, APP_BUILD_DATE } from './src/constants/version';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
@@ -56,8 +57,8 @@ export default defineConfig(({ mode }) => {
           const outDir = target === 'admin' ? 'dist-admin' : target === 'employee' ? 'dist-employee' : 'dist-public';
           const versionPath = path.resolve(__dirname, outDir, 'version.json');
           const versionData = {
-            version: 'v1.0.0',
-            buildDate: '2026.11.10',
+            version: APP_VERSION,
+            buildDate: APP_BUILD_DATE,
             buildTime: Date.now()
           };
           try {
