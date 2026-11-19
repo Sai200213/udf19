@@ -39,7 +39,11 @@ const AdminDisciplinaryPage: React.FC<AdminDisciplinaryPageProps> = ({
   const [description, setDescription] = useState('');
   const [supportingDoc, setSupportingDoc] = useState<File | null>(null);
 
-  const hasManagePerm = isSuperAdmin || userRole?.permissions.includes(Permission.MANAGE_DISCIPLINE);
+  const hasManagePerm = isSuperAdmin || 
+    Boolean(userRole?.permissions?.includes(Permission.DISCIPLINE_MANAGE)) || 
+    Boolean(userRole?.permissions?.includes(Permission.MANAGE_DISCIPLINE)) ||
+    Boolean((authUser as any)?.permissionOverrides?.[Permission.DISCIPLINE_MANAGE]) ||
+    Boolean((authUser as any)?.permissionOverrides?.[Permission.MANAGE_DISCIPLINE]);
 
   // Load employee lookup for site filtering and dropdown
   React.useEffect(() => {

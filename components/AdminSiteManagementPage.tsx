@@ -20,6 +20,7 @@ interface AdminSiteManagementPageProps {
   isSuperAdmin: boolean;
   portalConfig: PortalConfig;
   setPortalConfig: React.Dispatch<React.SetStateAction<PortalConfig>>;
+  allowedSiteIds?: string[];
   // Audit Log Prop - Optional for backward compatibility if not passed immediately, but app logic will pass it
   logAction?: (actionType: 'CREATE' | 'UPDATE' | 'DELETE' | 'STATUS_CHANGE' | 'APPROVAL' | 'REJECTION', targetModule: 'SITES' | 'STAFF' | 'ROLES' | 'LEAVES' | 'EMPLOYEES' | 'SYSTEM', details: string) => void;
 }
@@ -31,7 +32,7 @@ import { defaultFormSections } from '../src/constants/defaults';
 import { moveToRecycleBin, restoreFromRecycleBin } from '../src/services/recycleBinService';
 import { showUndoToast } from '../src/utils/undoToast';
 
-const AdminSiteManagementPage: React.FC<AdminSiteManagementPageProps> = ({ sites, setSites, submittedForms, staffUsers, roles, onNotify, userRole, isSuperAdmin, portalConfig, setPortalConfig, logAction }) => {
+const AdminSiteManagementPage: React.FC<AdminSiteManagementPageProps> = ({ sites, setSites, submittedForms, staffUsers, roles, onNotify, userRole, isSuperAdmin, portalConfig, setPortalConfig, allowedSiteIds, logAction }) => {
   const { sections } = useData();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -367,7 +368,7 @@ const AdminSiteManagementPage: React.FC<AdminSiteManagementPageProps> = ({ sites
     return null;
   };
 
-  const handleAddSite = (e: React.FormEvent) => {
+  const handleAddSite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!hasManagePerm) return;
     if (!siteName.trim() || !location.trim()) {
@@ -387,7 +388,10 @@ const AdminSiteManagementPage: React.FC<AdminSiteManagementPageProps> = ({ sites
       createdAt: new Date().toISOString(),
     };
 
-    const updatedSites = [...sites, newSite];
+    const { getSites } = await import('../src/services/siteService');
+    const allCurrentSites = await getSites();
+    const baseSites = allCurrentSites.length > 0 ? allCurrentSites : sites;
+    const updatedSites = [...baseSites, newSite];
     setSites(updatedSites);
     saveAllSites(updatedSites).catch(err => console.error("Failed to save sites:", err));
 
@@ -406,13 +410,21 @@ const AdminSiteManagementPage: React.FC<AdminSiteManagementPageProps> = ({ sites
     setRequiresBgv(false);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (editingSite && hasManagePerm) {
+      const existingIds = Array.isArray(editingSite.supervisorIds) ? editingSite.supervisorIds.filter(Boolean) : [];
+      const mergedSupervisorIds = editingSite.supervisorId
+        ? Array.from(new Set([editingSite.supervisorId, ...existingIds]))
+        : existingIds;
       const siteToSave: Site = {
         ...editingSite,
-        supervisorIds: editingSite.supervisorId ? [editingSite.supervisorId] : []
+        supervisorIds: mergedSupervisorIds
       };
-      const updatedSites = sites.map(s => s.id === editingSite.id ? siteToSave : s);
+
+      const { getSites } = await import('../src/services/siteService');
+      const allCurrentSites = await getSites();
+      const baseSites = allCurrentSites.length > 0 ? allCurrentSites : sites;
+      const updatedSites = baseSites.map(s => s.id === editingSite.id ? siteToSave : s);
       setSites(updatedSites);
       saveAllSites(updatedSites).catch(err => console.error("Failed to save sites:", err));
 
@@ -567,6 +579,7 @@ return (
           sites
             // VISIBILITY FILTER: Only Super Admin sees 'Inactive' sites
             .filter(site => isSuperAdmin || site.status === 'Active')
+            .filter(site => isSuperAdmin || !allowedSiteIds || allowedSiteIds.includes(site.id))
             .map(site => {
               const count = getSiteHeadcount(site.name);
               const supervisor = getSupervisorDetails(site.supervisorId, site);

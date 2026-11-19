@@ -265,7 +265,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
     try {
       const { exportEmployeesToCSV } = await import('../utils/exportUtils');
       // SECURITY: Pass RBAC permissions to the export generator
-      const canViewSensitive = isSuperAdmin || hasPermission(Permission.VIEW_SENSITIVE_INFO);
+      const canViewSensitive = isSuperAdmin || hasPermission(Permission.VIEW_SENSITIVE_INFO) || hasPermission(Permission.EMPLOYEES_VIEW_SENSITIVE_INFO);
       const getVisibleFieldIds = () => {
         if (isSuperAdmin) return null;
         if (userRole?.fieldVisibility) {
@@ -376,18 +376,18 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
       icon: <ClipboardList size={20} />,
       visible: true,
       children: [
-        { id: AppView.ADMIN_PORTAL_SUBMISSION_REVIEW, view: AppView.ADMIN_PORTAL_SUBMISSION_REVIEW, label: 'New Joiners', icon: <UserPlus size={18} />, visible: canSeeModule(Permission.MANAGE_SUBMISSIONS, Permission.VIEW_SUBMISSIONS) },
-        { id: AppView.ADMIN_PORTAL_LEAVE_MANAGEMENT, view: AppView.ADMIN_PORTAL_LEAVE_MANAGEMENT, label: 'Leave Requests', icon: <CalendarCheck size={18} />, visible: canSeeModule(Permission.MANAGE_LEAVES, Permission.VIEW_LEAVES) },
-        { id: AppView.ADMIN_PORTAL_ACCOUNT_UPDATE_MANAGEMENT, view: AppView.ADMIN_PORTAL_ACCOUNT_UPDATE_MANAGEMENT, label: 'Account Updates', icon: <UserCheck size={18} />, visible: canSeeModule(Permission.MANAGE_ACCOUNT_UPDATES, Permission.VIEW_ACCOUNT_UPDATES) },
-        { id: AppView.ADMIN_PORTAL_RESIGNATION_MANAGEMENT, view: AppView.ADMIN_PORTAL_RESIGNATION_MANAGEMENT, label: 'Resignations', icon: <UserMinus size={18} />, visible: canSeeModule(Permission.MANAGE_RESIGNATIONS, Permission.VIEW_RESIGNATIONS) },
-        { id: AppView.ADMIN_PORTAL_DISCIPLINARY_MANAGEMENT, view: AppView.ADMIN_PORTAL_DISCIPLINARY_MANAGEMENT, label: 'Disciplinary Actions', icon: <Gavel size={18} />, visible: canSeeModule(Permission.MANAGE_DISCIPLINE, Permission.VIEW_DISCIPLINE) },
+        { id: AppView.ADMIN_PORTAL_SUBMISSION_REVIEW, view: AppView.ADMIN_PORTAL_SUBMISSION_REVIEW, label: 'New Joiners', icon: <UserPlus size={18} />, visible: canSeeModule(Permission.MANAGE_SUBMISSIONS, Permission.VIEW_SUBMISSIONS, Permission.SUBMISSIONS_VIEW, Permission.SUBMISSIONS_APPROVE) },
+        { id: AppView.ADMIN_PORTAL_LEAVE_MANAGEMENT, view: AppView.ADMIN_PORTAL_LEAVE_MANAGEMENT, label: 'Leave Requests', icon: <CalendarCheck size={18} />, visible: canSeeModule(Permission.MANAGE_LEAVES, Permission.VIEW_LEAVES, Permission.LEAVES_VIEW, Permission.LEAVES_APPROVE) },
+        { id: AppView.ADMIN_PORTAL_ACCOUNT_UPDATE_MANAGEMENT, view: AppView.ADMIN_PORTAL_ACCOUNT_UPDATE_MANAGEMENT, label: 'Account Updates', icon: <UserCheck size={18} />, visible: canSeeModule(Permission.MANAGE_ACCOUNT_UPDATES, Permission.VIEW_ACCOUNT_UPDATES, Permission.ACCOUNT_UPDATES_VIEW, Permission.ACCOUNT_UPDATES_APPROVE) },
+        { id: AppView.ADMIN_PORTAL_RESIGNATION_MANAGEMENT, view: AppView.ADMIN_PORTAL_RESIGNATION_MANAGEMENT, label: 'Resignations', icon: <UserMinus size={18} />, visible: canSeeModule(Permission.MANAGE_RESIGNATIONS, Permission.VIEW_RESIGNATIONS, Permission.RESIGNATIONS_VIEW, Permission.RESIGNATIONS_APPROVE) },
+        { id: AppView.ADMIN_PORTAL_DISCIPLINARY_MANAGEMENT, view: AppView.ADMIN_PORTAL_DISCIPLINARY_MANAGEMENT, label: 'Disciplinary Actions', icon: <Gavel size={18} />, visible: canSeeModule(Permission.MANAGE_DISCIPLINE, Permission.VIEW_DISCIPLINE, Permission.DISCIPLINE_VIEW, Permission.DISCIPLINE_MANAGE) },
         { id: AppView.ADMIN_PORTAL_DRAFTS, view: AppView.ADMIN_PORTAL_DRAFTS, label: 'Onboarding Drafts', icon: <FileClock size={18} />, visible: hasPermission(Permission.SUBMISSIONS_VIEW_DRAFTS) },
         { id: AppView.ADMIN_PORTAL_CORRECTION_REQUESTS, view: AppView.ADMIN_PORTAL_CORRECTION_REQUESTS, label: 'Correction Links', icon: <Link2 size={18} />, visible: isSuperAdmin || hasPermission(Permission.SUBMISSIONS_VIEW_CORRECTION_LINKS) },
         { id: AppView.ADMIN_PORTAL_GRIEVANCES, view: AppView.ADMIN_PORTAL_GRIEVANCES, label: 'Grievances & Inquiries', icon: <MessageSquare size={18} />, visible: isSuperAdmin || hasPermission(Permission.GRIEVANCES_VIEW) || hasPermission(Permission.REWARDS_VIEW) || hasPermission(Permission.REWARDS_MANAGE) || hasPermission(Permission.MANAGE_SYSTEM) },
       ]
     },
 
-    { id: AppView.ADMIN_PORTAL_MASTER_EMPLOYEE_LIST, view: AppView.ADMIN_PORTAL_MASTER_EMPLOYEE_LIST, label: 'Master Employee List', icon: <List size={20} />, visible: hasPermission(Permission.VIEW_MASTER_EMPLOYEE_LIST) },
+    { id: AppView.ADMIN_PORTAL_MASTER_EMPLOYEE_LIST, view: AppView.ADMIN_PORTAL_MASTER_EMPLOYEE_LIST, label: 'Master Employee List', icon: <List size={20} />, visible: canSeeModule(Permission.VIEW_MASTER_EMPLOYEE_LIST, Permission.EMPLOYEES_VIEW) },
     { id: AppView.ADMIN_PORTAL_BGV_MANAGEMENT, view: AppView.ADMIN_PORTAL_BGV_MANAGEMENT, label: 'BGV Clearance', icon: <ShieldCheck size={20} />, visible: isSuperAdmin || hasPermission(Permission.BGV_VIEW) || hasPermission(Permission.BGV_MANAGE) || hasPermission(Permission.BGV_VENDOR) },
     { id: AppView.ADMIN_PORTAL_TIMELINE_SEARCH, view: AppView.ADMIN_PORTAL_TIMELINE_SEARCH, label: 'Employee Inquiry', icon: <Search size={20} />, visible: isSuperAdmin },
 
@@ -410,7 +410,7 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
       icon: <Building size={20} />,
       visible: true,
       children: [
-        { id: AppView.ADMIN_PORTAL_SITE_MANAGEMENT, view: AppView.ADMIN_PORTAL_SITE_MANAGEMENT, label: 'Site Management', icon: <MapPin size={18} />, visible: canSeeModule(Permission.MANAGE_SITES, Permission.VIEW_SITES) },
+        { id: AppView.ADMIN_PORTAL_SITE_MANAGEMENT, view: AppView.ADMIN_PORTAL_SITE_MANAGEMENT, label: 'Site Management', icon: <MapPin size={18} />, visible: canSeeModule(Permission.MANAGE_SITES, Permission.VIEW_SITES, Permission.SITES_VIEW, Permission.SITES_MANAGE) },
         { id: AppView.ADMIN_PORTAL_STAFF_MANAGEMENT, view: AppView.ADMIN_PORTAL_STAFF_MANAGEMENT, label: 'Staff Accounts', icon: <UserPlus size={18} />, visible: hasPermission(Permission.MANAGE_STAFF) },
         { id: AppView.ADMIN_PORTAL_ROLE_MANAGEMENT, view: AppView.ADMIN_PORTAL_ROLE_MANAGEMENT, label: 'Roles & Permissions', icon: <ShieldHalf size={18} />, visible: hasPermission(Permission.MANAGE_ROLES) },
       ]
@@ -770,7 +770,8 @@ const AdminPortalPage: React.FC<AdminPortalPageProps> = (props) => {
       case AppView.ADMIN_PORTAL_SITE_MANAGEMENT:
         if (!canSeeModule(Permission.SITES_MANAGE, Permission.SITES_VIEW)) return accessDenied;
         return <AdminSiteManagementPage 
-          sites={isSuperAdmin ? sites : sites.filter(s => allowedSiteIds?.includes(s.id))} 
+          sites={sites} 
+          allowedSiteIds={allowedSiteIds}
           setSites={setSites} 
           submittedForms={submittedForms} 
           staffUsers={staffUsers} 

@@ -44,6 +44,7 @@ log.log("Config Presence - AUTH DOMAIN:", import.meta.env.VITE_FIREBASE_AUTH_DOM
 
 export const db = initializeFirestore(app, {
     experimentalAutoDetectLongPolling: true,
+    ignoreUndefinedProperties: true,
 });
 export const storage = getStorage(app);
 

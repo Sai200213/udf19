@@ -1082,7 +1082,7 @@ const App: React.FC = () => {
 
   // Compute Leave Balances from Employees and Policy
   useEffect(() => {
-    if (employees.length === 0) return;
+    if (employees.length === 0 || !leavePolicy || !Array.isArray(leavePolicy.leaveTypes)) return;
 
     const keyMap: Record<string, string> = {
       'casual': LeaveType.CASUAL,
@@ -1272,6 +1272,7 @@ const App: React.FC = () => {
 
   // Initialize balance helper - Updated to use LeavePolicy
   const initializeLeaveBalance = (employeeId: string) => {
+    if (!leavePolicy || !Array.isArray(leavePolicy.leaveTypes)) return;
     const balances: any = {};
 
     // Default balances from policy
